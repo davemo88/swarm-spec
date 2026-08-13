@@ -400,6 +400,30 @@ for m in chuggy_witness_free_test chuggy_witness_cascade_test \
   npx quint test --main="$m" specs/chuggy/tests/chuggy_witness_test.qnt
 done
 
+# The NINTH deterministic shape, in its own file because it arrived as a
+# finding rather than as a PR's own witness: the GROUP-DEP CYCLE, refused.
+# Absorption rewrites the dep graph through the derived union at arbitrary
+# distance, so two hops build a cycle the direct-dep conjunct cannot see
+# (X deps the lead, m deps X: the union then waits on X while X waits on
+# the lead). Pinned as a guard refusal mid-trace, the gate module's shape,
+# with the PRE-CONVEXITY guard expression carried verbatim beside it so a
+# weakening cannot drift green — the old expression says yes at exactly the
+# step the new one says no. Mutation-verified (dropping absorbKeepsConvex
+# reddens this run, the mc_batch_cycle probe, AND the Stage 9
+# mc_chuggy_budgeted allInvariants run at its existing budget, which is why
+# groupDepsAcyclic earns its slot in allInvariants).
+echo "--- quint test --main=chuggy_batch_cycle_test specs/chuggy/tests/chuggy_batch_cycle_test.qnt"
+npx quint test --main=chuggy_batch_cycle_test \
+  specs/chuggy/tests/chuggy_batch_cycle_test.qnt
+
+# The random side of that witness: groupDepsAcyclic on its OWN budget
+# (absorb pairs are dense — on the unfixed guard this violated in under a
+# second at ~8k traces/second, which is how the finding was confirmed
+# independently of the trace above). Unseeded.
+echo "--- quint run --main=mc_batch_cycle --invariant=groupDepsAcyclic"
+npx quint run specs/chuggy/mc/mc_batch_cycle.qnt --main=mc_batch_cycle \
+  --invariant=groupDepsAcyclic --max-samples=20000 --max-steps=12
+
 # 9b-RND — the DEMOTED random layer: the four pinned-seed expected-violation
 # probes (the Stage 6a pattern: pinned seed, rust backend, grep the verdict),
 # kept because they answer a question the deterministic layer cannot: does

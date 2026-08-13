@@ -1,15 +1,29 @@
-/// THE GROUP-DEP CYCLE (finding, against PR 5's R7): absorption can build
-/// a dependency cycle through the DERIVED union, deadlocking the group and
-/// its dep forever — and no invariant in allInvariants sees it, because
-/// depsAcyclic quantifies over STORED deps (which stay acyclic) and
-/// stuckSet's only base case is PEscalated (which a pure cycle never
-/// reaches).
+/// THE GROUP-DEP CYCLE, refused (the convexity guard's deterministic
+/// witness — chuggy_witness_test.qnt's ninth shape, kept in its own file
+/// only because it arrived as a finding).
 ///
-/// The machine trace below is built with chuggy_witness_test.qnt's driver
-/// discipline: every driver conjoins the machine action's own enablement
-/// guard, so the state it reaches is reachable by `step`, not by a
-/// loosened relation. Consts are byte-identical to
-/// chuggy_witness_batch_test's instance.
+/// THE SHAPE: absorption rewrites the dep graph through the DERIVED union,
+/// and the drop-out reaches arbitrarily far, so a two-hop path is enough to
+/// build a cycle. X deps the lead A; B deps X; absorbing B under A puts X
+/// in the group's union while X still waits on A — group -> X -> group,
+/// both sides waiting forever. The direct-dep conjunct sees one hop and
+/// cannot refuse it; `absorbKeepsConvex` is what does.
+///
+/// WHY IT NEEDS A WITNESS RATHER THAN AN INVARIANT ALONE: on the unfixed
+/// machine this deadlock is INVISIBLE to every existing check. depsAcyclic
+/// reads the stored deps, which absorption never rewrites. stuckSet's only
+/// base case is PEscalated, which a pure cycle never reaches, so the
+/// deadlocked tickets are in neither stuckSet nor coveredSet and
+/// deskVisibility holds VACUOUSLY over them. A guard whose failure mode is
+/// invisible has to be pinned at the refusal itself.
+///
+/// MECHANISM: chuggy_witness_test.qnt's driver discipline — every driver
+/// conjoins the machine action's own enablement guard, evaluated in the
+/// pre-state, so the state reached is reachable by `step`. The refusal is
+/// pinned the way the gate module pins depth-1 exclusivity: as a guard
+/// evaluated mid-trace, with the shape reached and only the absorption
+/// disabled. Consts are byte-identical to chuggy_witness_batch_test's
+/// instance.
 module chuggy_batch_cycle_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(
@@ -42,34 +56,24 @@ module chuggy_batch_cycle_test {
 
   pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
 
-  /// Transitive closure of the STORED deps (acyclic by construction, so
-  /// the fold saturates within one sweep per live ticket).
-  pure def depsReach(c: Core, k: int): Set[int] =
-    range(1, c.tickets.keys().size() + 1).foldl(c.tickets.get(k).deps,
-      (acc, _) => acc.union(acc.fold(Set(),
-        (a, d) => a.union(c.tickets.get(d).deps))))
+  /// THE GUARD AS IT WAS, verbatim, so the refusal below cannot drift
+  /// green. If a future edit weakens absorbableIn back toward this, the
+  /// first conjunct of the refusal step keeps passing while the second
+  /// starts failing — which is the point of carrying the old expression
+  /// rather than asserting the refusal alone.
+  pure def absorbableSansConvexity(c: Core, l: int, m: int): bool = and {
+    l != m,
+    c.tickets.get(l).phase == PPending,
+    c.tickets.get(m).phase == PPending,
+    c.tickets.get(l).repo == c.tickets.get(m).repo,
+    membersOf(c, m) == Set(),
+    not(c.tickets.get(l).deps.contains(m))
+  }
 
-  /// THE PROPOSED INVARIANT (the fix's shape): the group is CONVEX in the
-  /// dep DAG — no ticket outside the group sits on a dep path between two
-  /// of its members. Equivalently, at the derived edge: nothing the group
-  /// still WAITS on may depend, transitively, back on the group. Violated
-  /// by the trace below; `absorbableIn`'s direct-dep check is strictly
-  /// weaker. Done tickets are filtered from both sides: a satisfied dep
-  /// gates nothing, so a path through one is not a wait.
-  pure def groupDepsAcyclic(c: Core): bool =
-    c.tickets.keys().forall(l =>
-      val g = Set(l).union(membersOf(c, l))
-      groupDeps(c, l).filter(d => c.tickets.get(d).phase != PDone)
-        .forall(d => depsReach(c, d)
-          .filter(k => c.tickets.get(k).phase != PDone)
-          .intersect(g) == Set()))
-
-  /// A -> nothing, X -> A, B -> X. Absorbing B under lead A is permitted
-  /// (A does not DIRECTLY dep B), and the union then makes the group wait
-  /// on X while X waits on the lead.
-  run groupDepCycleTest =
+  /// A deps nothing, X deps A, B deps X — all released, all same repo.
+  run cycleAbsorbRefusedTest =
     init
-      .then(doArrive(Set(), progFlat1, 1))         // 1 = A, the lead
+      .then(doArrive(Set(), progFlat1, 1))         // 1 = A, the lead-to-be
       .expect(allInvariants)
       .then(doArrive(Set(1), progFlat1, 1))        // 2 = X, deps A
       .expect(allInvariants)
@@ -80,39 +84,38 @@ module chuggy_batch_cycle_test {
       .then(doRelease(2))
       .expect(and { isBlocked(2), allInvariants })
       .then(doRelease(3))
-      .expect(and { isBlocked(3), allInvariants })
-      // THE ABSORPTION THE GUARD ALLOWS. absorbableIn's last conjunct
-      // ("the lead never absorbs its own dependency") is satisfied: the
-      // lead deps NOTHING. The path A <- X <- B is two hops, and a
-      // direct-dep check cannot see it.
-      .then(doAbsorb(1, 3))
+      .expect(and {
+        isBlocked(3),
+        // THE REFUSAL, pinned at the pair that would build the cycle. The
+        // lead deps NOTHING, so every conjunct the guard used to have is
+        // satisfied — the old expression says yes...
+        absorbableSansConvexity(core, 1, 3),
+        // ...and convexity is the one that says no.
+        not(absorbKeepsConvex(core, 1, 3)),
+        not(absorbableIn(core, 1, 3)),
+        not(absorbablePairs.contains((1, 3))),     // the machine's own draw set
+        // NOT a blanket refusal: the DIRECTED reading of the same edge is
+        // still allowed, because a member-on-lead dep drops out of the
+        // union harmlessly.
+        absorbableIn(core, 1, 2),
+        allInvariants
+      })
+      // And the safe absorption still runs, with the union empty and the
+      // lead still dispatchable — the guard costs the legitimate grouping
+      // nothing.
+      .then(doAbsorb(1, 2))
       .expect(and {
         lastStep.label == "ticket-batched",
-        tickets.get(3).phase == PBatched,
-        membersOf(core, 1) == Set(3),
-        // THE CYCLE, stated: the group waits on X...
-        groupDeps(core, 1) == Set(2),
-        // ...and X waits on the lead of that same group.
-        tickets.get(2).deps == Set(1),
-        // Consequence: nothing can ever dispatch or land.
-        isBlocked(1),
-        isBlocked(2),
-        readyTickets == Set(),
-        not(dispatchableIn(core, 1)),
-        not(dispatchableIn(core, 2)),
-        // THE MODEL DOES NOT SEE IT — every existing invariant is green
-        // on this permanently deadlocked state.
-        depsAcyclic,                    // stored deps: still acyclic
-        stuckSet == Set(),              // nobody is "non-progressing"
-        deskVisibility,                 // holds VACUOUSLY: no human owns it
-        allInvariants,
-        // ...and the proposed invariant is what catches it.
-        not(groupDepsAcyclic(core))
+        membersOf(core, 1) == Set(2),
+        groupDeps(core, 1) == Set(),
+        isReady(1),
+        groupDepsAcyclic,
+        allInvariants
       })
 
-  /// The same shape one hop shorter, to show the existing guard is doing
-  /// real work and this finding is about its REACH, not its absence:
-  /// with the lead depping the member DIRECTLY, absorption is refused.
+  /// The one-hop shape, held from underneath: the pre-existing direct-dep
+  /// conjunct is still doing its own work, and this finding was about the
+  /// guard's REACH, not its absence.
   run directDepStillRefusedTest =
     init
       .then(doArrive(Set(), progFlat1, 1))         // 1
@@ -120,18 +123,11 @@ module chuggy_batch_cycle_test {
       .then(doRelease(1))
       .then(doRelease(2))
       .expect(and {
-        // 2 deps 1, so 2 may not absorb 1 (the existing conjunct)...
+        not(absorbableSansConvexity(core, 2, 1)),  // refused one hop up...
         not(absorbableIn(core, 2, 1)),
-        // ...but the DIRECTED reading is allowed, and is safe: the
-        // member-on-lead dep drops out of the union harmlessly.
-        absorbableIn(core, 1, 2),
-        groupDepsAcyclic(core)
-      })
-      .then(doAbsorb(1, 2))
-      .expect(and {
-        groupDeps(core, 1) == Set(),    // the member-on-lead dep drops out
-        isReady(1),
-        groupDepsAcyclic(core),         // no cycle: this one is fine
+        absorbKeepsConvex(core, 2, 1),             // ...and NOT by convexity
+        absorbableIn(core, 1, 2),                  // the directed reading, safe
+        groupDepsAcyclic,
         allInvariants
       })
 }

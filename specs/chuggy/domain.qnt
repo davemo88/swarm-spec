@@ -546,13 +546,41 @@ module chuggy_domain {
   /// chuggernaut neither direction exists (the batch is a fresh job:
   /// members cannot name it and it deps only the computed union) — the
   /// absorbed-lead reading created both, and keeps only the safe one.
+  ///
+  /// THE GROUP MUST STAY CONVEX (the last conjunct). The direct-dep rule
+  /// above is not enough: it sees one hop, and the union's drop-out
+  /// rewrites the graph at ARBITRARY distance. With X depping the lead and
+  /// m depping X, absorbing m puts X in the group's union while X still
+  /// waits on the lead — group -> X -> group, a deadlock no stored-dep
+  /// check can see (depsAcyclic quantifies over stored deps, which never
+  /// change) and no desk task owns (stuckSet's base case is PEscalated,
+  /// which a pure cycle never reaches, so deskVisibility holds
+  /// VACUOUSLY over it). Convexity — no ticket outside the group on a live
+  /// dep path back into it — is exactly the precondition, and it is
+  /// necessary as well as sufficient: any non-convex absorption puts the
+  /// separating ticket in the union by construction. Done deps are
+  /// filtered on both sides: a satisfied dep gates nothing.
+  pure def depsReachLive(c: Core, k: int): Set[int] =
+    range(1, c.tickets.keys().size() + 1)
+      .foldl(c.tickets.get(k).deps, (acc, _) =>
+        acc.union(acc.fold(Set(), (a, d) => a.union(c.tickets.get(d).deps))))
+      .filter(d => c.tickets.get(d).phase != PDone)
+
+  pure def absorbKeepsConvex(c: Core, l: int, m: int): bool =
+    val g = Set(l, m).union(membersOf(c, l))
+    g.fold(Set(), (acc, k) => acc.union(c.tickets.get(k).deps))
+      .exclude(g)
+      .filter(d => c.tickets.get(d).phase != PDone)
+      .forall(d => depsReachLive(c, d).intersect(g) == Set())
+
   pure def absorbableIn(c: Core, l: int, m: int): bool = and {
     l != m,
     c.tickets.get(l).phase == PPending,
     c.tickets.get(m).phase == PPending,
     c.tickets.get(l).repo == c.tickets.get(m).repo,
     membersOf(c, m) == Set(),
-    not(c.tickets.get(l).deps.contains(m))
+    not(c.tickets.get(l).deps.contains(m)),
+    absorbKeepsConvex(c, l, m)
   }
 
   /// THE ABSORPTION (R7): the member parks in the grouping phase carrying
@@ -1927,6 +1955,21 @@ module chuggy_domain {
         }
     })
 
+  /// GROUP CONVEXITY, as a checked theorem (the companion to
+  /// absorbKeepsConvex): no ticket outside a group sits on a LIVE dep path
+  /// back into it, so the derived union can never make a group wait on
+  /// something that waits on the group. depsAcyclic cannot express this —
+  /// it reads the STORED deps, which absorption never rewrites, while the
+  /// cycle lives entirely in groupDeps. Maintained by the guard rather
+  /// than proved from it, on the batchWellFormed precedent: the guard is
+  /// the enforcement, the invariant is what makes a future weakening of it
+  /// fail loudly instead of silently deadlocking a group.
+  val groupDepsAcyclic: bool = liveTickets.forall(l =>
+    val g = Set(l).union(membersOf(core, l))
+    groupDeps(core, l)
+      .filter(d => tickets.get(d).phase != PDone)
+      .forall(d => depsReachLive(core, d).intersect(g) == Set()))
+
   /// Every live ticket targets a repo inside the bounded universe — the
   /// arrival-refusal claim made durable (the programsWellFormed shape):
   /// repos enter only through decideArrive, whose callers draw from
@@ -2425,6 +2468,7 @@ module chuggy_domain {
     gatedPromotesDirectSquashes,
     gateDepthOne,
     batchWellFormed,
+    groupDepsAcyclic,
     reposWellFormed,
     terminalsAbsorbing,
     deskConsistent,

@@ -101,6 +101,8 @@ chuggy:
     npx quint typecheck specs/chuggy/mc/mc_chuggy.qnt
     npx quint typecheck specs/chuggy/tests/chuggy_test.qnt
     npx quint typecheck specs/chuggy/tests/chuggy_witness_test.qnt
+    npx quint typecheck specs/chuggy/tests/chuggy_batch_cycle_test.qnt
+    npx quint typecheck specs/chuggy/mc/mc_batch_cycle.qnt
     npx quint test specs/chuggy/tests/chuggy_test.qnt
     npx quint test --main=chuggy_witness_free_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint test --main=chuggy_witness_cascade_test specs/chuggy/tests/chuggy_witness_test.qnt
@@ -110,10 +112,12 @@ chuggy:
     npx quint test --main=chuggy_witness_gate_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint test --main=chuggy_witness_gate_deadline_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint test --main=chuggy_witness_batch_test specs/chuggy/tests/chuggy_witness_test.qnt
+    npx quint test --main=chuggy_batch_cycle_test specs/chuggy/tests/chuggy_batch_cycle_test.qnt
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations --invariant=allInvariants --max-samples=2000 --max-steps=40
+    npx quint run specs/chuggy/mc/mc_batch_cycle.qnt --main=mc_batch_cycle --invariant=groupDepsAcyclic --max-samples=20000 --max-steps=12
     npx quint typecheck specs/chuggy/refinement.qnt
     npx quint typecheck specs/chuggy/tests/chuggy_refinement_test.qnt
     npx quint test --main=chuggy_refinement_unit_test specs/chuggy/tests/chuggy_refinement_test.qnt
