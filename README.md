@@ -1,3 +1,24 @@
+> **ARCHIVED — the chuggy model moved to [kasofsk/chuggy](https://github.com/kasofsk/chuggy).**
+>
+> This repository holds two Quint models: one of **chuggernaut** (the v1
+> platform, under `specs/chuggernaut/`) and one of **chuggy**, its successor.
+> Only the chuggy half is still developed, and it now lives at `model/` in the
+> chuggy monorepo alongside the implementation it specifies — which is what the
+> charter always planned once implementation work began.
+>
+> The chuggy model there has moved on substantially since the migration:
+> citation-scoped evaluation removed, wrap-up generalized beyond merging, an
+> artifact identity added, and the comments stripped of the development
+> history they used to narrate. **Do not treat `specs/chuggy/` here as
+> current.** The chuggernaut half remains accurate for the platform it
+> describes, which is itself being retired.
+>
+> Two branches were never merged and are frozen with the rest:
+> `model/bounds-work-not-waiting` (whose content went to chuggy directly) and
+> `finding/batch-dep-cycle` (a convexity fix superseded by removing grouping
+> altogether; the argument survives in chuggy's
+> `docs/design/001-what-chuggy-is-not.md`).
+
 # swarm-spec
 
 A formal [Quint](https://quint-lang.org/) model of chuggernaut's orchestration
