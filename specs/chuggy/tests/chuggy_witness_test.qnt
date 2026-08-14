@@ -60,7 +60,9 @@
 /// module, so instances cannot share a module); each module's consts are
 /// byte-identical to the mc/mc_chuggy.qnt instance the random layer samples,
 /// so the deterministic trace speaks about the same machine. check.sh Stage
-/// 9b runs all eight via `quint test --main=<module>`; `just chuggy` mirrors.
+/// 9b runs all EIGHT via `quint test --main=<module>`; `just chuggy`
+/// mirrors. (The count was stale at seven between the grouping removal,
+/// which deleted the batch module, and the accepted-wait module below.)
 ///
 /// THE MULTI-REPO PR (roadmap PR 4) extends THIS layer first, per its own
 /// convention: the machine's two NEW nondet draws — the authored repo pick
@@ -1382,6 +1384,86 @@ module chuggy_witness_gate_deadline_test {
         // (the honest corner — a human funds nothing by pressing Retry).
         retryableEscalated == Set(),
         gateFreeIn(core, 1),                       // the wall freed the slot
+        allInvariants
+      })
+}
+
+/// THE ACCEPTED WAIT, PINNED (2026-08-14, davemo88) — the odd module out:
+/// every other run here witnesses something the machine GUARANTEES; this
+/// one witnesses something it deliberately DOES NOT, so the acceptance is
+/// a thing the suite holds rather than a paragraph the next reader has to
+/// re-derive.
+///
+/// The shape: ticket 1 arrives as a Draft and the author never releases
+/// it; ticket 2 deps on it and IS released. Ticket 2 can now be moved by
+/// NO machine action — only by an author (release 1, or revoke either).
+/// It holds no desk task, and nothing in its dep chain holds one, so it is
+/// in neither `stuckSet` nor `coveredSet` and `stuckSubsetCovered` passes
+/// VACUOUSLY over it. That is the charter's bounds-work-not-waiting row
+/// made concrete: the ticket is not churning, it is waiting, and waiting
+/// is unbounded by decision.
+///
+/// It also pins the OTHER half — that the accepted class is not swept up
+/// by the deadlock net. `noStructuralDeadlock` stays GREEN here, because a
+/// continuation exists (the author may still release 1). Should a future
+/// edit make this state flag, that edit has changed the accepted position,
+/// not merely tightened an invariant.
+module chuggy_witness_draft_wait_test {
+  import chuggy_measure.* from "../measure"
+  import chuggy_domain(
+    N_TICKETS = 2,
+    N_TASKS = 1,
+    REWORK_POLICY = RWBudget(1),
+    GAS = 3,
+    GATE_PRICING = Budgeted(1),
+    OP_RETRY_PRICING = RetryCharged,
+    MAX_STAGES = 1,
+    N_REGIONS = 1,
+    N_REPOS = 1
+  ).* from "../domain"
+
+  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
+    canArrive,
+    deps_.subseteq(dependableTickets),
+    validPrograms.contains(prog),
+    repos.contains(repo_),
+    apply(decideArrive(core, deps_, prog, repo_))
+  }
+  action doRelease(j: int): bool = all {
+    draftTickets.contains(j),
+    apply(decideRelease(core, j))
+  }
+
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+
+  run draftWaitAcceptedDeterministicTest =
+    init
+      .then(doArrive(Set(), progFlat1, 1))          // 1: the Draft, never released
+      .expect(allInvariants)
+      .then(doArrive(Set(1), progFlat1, 1))         // 2: deps on it
+      .expect(allInvariants)
+      .then(doRelease(2))
+      .expect(and {
+        // 2 is released and blocked behind an authoring-side dep.
+        tickets.get(2).phase == PPending,
+        isBlocked(2),
+        tickets.get(1).phase == PDraft,
+        // No MACHINE action can move it: not dispatchable, no task set to
+        // reduce, not enqueued, not retryable. Only an author can.
+        not(readyTickets.contains(2)),
+        not(dispatchableIn(core, 2)),
+        reducibleWork == Set(),
+        reducibleEval == Set(),
+        landingTickets == Set(),
+        retryableEscalated == Set(),
+        // THE ACCEPTANCE: invisible to the desk walks, both empty, so the
+        // containment holds over nothing at all.
+        stuckSet == Set(),
+        coveredSet == Set(),
+        stuckSubsetCovered,
+        // AND NOT a structural deadlock: a continuation exists.
+        canFinishSet == Set(1, 2),
+        noStructuralDeadlock,
         allInvariants
       })
 }

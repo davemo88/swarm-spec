@@ -517,7 +517,7 @@ module chuggy_domain {
   /// let one author's revocation silently destroy OTHER tickets with no human
   /// decision and no desk trace (a cascade-revoked ticket opens no task — the
   /// exact invisibility the §2 visibility row forbids). Second, parking
-  /// preserves deskVisibility structurally: every doomed dependent gets its
+  /// preserves desk coverage structurally: every doomed dependent gets its
   /// OWN open task (RsDependencyRevoked) telling a human "your dependency
   /// was revoked; settle me" — and the human settles it by revoking it (its
   /// desk revoke is the AUTHORING flat member in measure.qnt). The park is
@@ -536,7 +536,6 @@ module chuggy_domain {
   /// The parked wall stamps NO resume point (resumeAt stays RNone): deps
   /// are immutable, so no modeled resume exists — the wall's only exit is
   /// revoke (retryableIn; the deliberate table-line-44 deviation).
-
   pure def decideRevoke(c: Core, j: int): Decision =
     val n = c.tickets.keys().size()
     // Transitive dependents of j: deps point strictly downward, so one
@@ -617,8 +616,16 @@ module chuggy_domain {
     resumeCharge(c.tickets.get(j).resumeAt) <= c.tickets.get(j).gasLeft
   }
 
+  /// THE DISPATCH GATE'S DEP SET — the single definition of what a ticket
+  /// waits on before it may run. Factored out so the readiness check
+  /// (depsDoneIn) and the structural-deadlock check (canFinishSet) read
+  /// the SAME relation: the grouping bug was exactly a DERIVED gate
+  /// (groupDeps) diverging from the stored field depsAcyclic watched, so a
+  /// future derived gate must move both or neither.
+  pure def gateDeps(c: Core, j: int): Set[int] = c.tickets.get(j).deps
+
   pure def depsDoneIn(c: Core, j: int): bool =
-    c.tickets.get(j).deps.forall(k => c.tickets.get(k).phase == PDone)
+    gateDeps(c, j).forall(k => c.tickets.get(k).phase == PDone)
 
   // --- Core-parameterized enablement (REFINEMENT PR, roadmap PR 6 — the
   // m6 hoist discipline one level up, applied to the enablement SETS):
@@ -1565,7 +1572,7 @@ module chuggy_domain {
   /// invariant because it is the PR 2 gate's exclusivity half, though
   /// state-wise it is a corollary of landingExclusive (landings = 1 iff
   /// Done, landings <= 1, Revoked != Done ⇒ landings = 0) — same
-  /// stated-corollary treatment as deskVisibility.
+  /// stated-corollary treatment as stuckSubsetCovered.
   val revokedNeverLands: bool = liveTickets.forall(j =>
     (tickets.get(j).phase == PRevoked) implies (tickets.get(j).landings == 0))
 
@@ -1963,20 +1970,36 @@ module chuggy_domain {
         visEdges(j).exists(d => cov.contains(d))
       }))
 
-  /// The visibility invariant (charter §2, adopted by both): every
-  /// non-progressing ticket is reachable from an open human task. This is
-  /// v1's §5c wedge hazard answered structurally: a ticket stuck behind an
-  /// escalated dependency has no desk task of its own but IS reachable
-  /// from its dependency's.
+  /// THE TWO WALKS AGREE — and that is ALL this says. Renamed from
+  /// `deskVisibility` (2026-08-14, davemo88) because the old name claimed
+  /// charter §2's visibility row and this predicate cannot deliver it.
   ///
-  /// NOTE: with the desk task derived from the phase, this is a structural
-  /// COROLLARY of the stuck/covered definitions (induction over the dep
-  /// order: every stuckSet base case is a desk phase, which is covered by
-  /// hasOpenHumanTask; every inductive case rides the same dep edge in
-  /// both folds). It is kept as a STATED, checked theorem — the charter
-  /// row deserves a name in the invariant list — not as an independent
-  /// check.
-  val deskVisibility: bool = stuckSet.subseteq(coveredSet)
+  /// It is a TAUTOLOGY over the definitions, not a theorem about the
+  /// machine. `stuckSet`'s base case is `PEscalated`; `coveredSet`'s base
+  /// case is `hasOpenHumanTask`, which IS `phase == PEscalated` — the same
+  /// predicate. Both walk the same `visEdges`, and `stuckSet`'s inductive
+  /// arm is `coveredSet`'s plus one conjunct (`PPending`), hence strictly
+  /// stronger. So with S and C the two sweep operators: S(X) ⊆ C(X) for
+  /// every X, C is monotone, both iterate from Set() for the same number
+  /// of sweeps, and stₖ ⊆ covₖ ⟹ stₖ₊₁ = S(stₖ) ⊆ C(stₖ) ⊆ C(covₖ) =
+  /// covₖ₊₁. No step of that argument mentions the transition relation:
+  /// swap chuggy for any other machine and it still holds. It cannot go
+  /// red for any machine, which is exactly why the deadlock absorption
+  /// could build sailed past it (the grouping removal's finding).
+  ///
+  /// KEPT IN `allInvariants` ANYWAY, for what it does guard: the two walks
+  /// against EACH OTHER. It goes red if a future edit adds a `stuckSet`
+  /// base case that is not a desk phase, puts a phase guard on
+  /// `coveredSet`'s inductive arm, or reintroduces an edge kind in one
+  /// walk but not the other — which is precisely what the merge-queue PR's
+  /// group edges were, and why that PR had to add them to both. It guards
+  /// the definitions; it does not guard the machine.
+  ///
+  /// The machine-checked half of charter §2's row is
+  /// `noStructuralDeadlock` below. The half no state predicate can carry —
+  /// unbounded WAITING — is accepted by name in the charter's
+  /// bounds-work-not-waiting row.
+  val stuckSubsetCovered: bool = stuckSet.subseteq(coveredSet)
 
   // --- Cascade safety (THE PR 2 gate) ---------------------------------------
 
@@ -1990,7 +2013,51 @@ module chuggy_domain {
             tickets.get(d).phase == PRevoked or dset.contains(d)))
         dset.union(Set(j)) else dset)
 
-  /// CASCADE SAFETY (deskVisibility's style, revoke's content): every ticket
+  /// Tickets with a REACHABLE route to Done — a least fixpoint UPWARD from
+  /// the terminal, deliberately the opposite direction from stuckSet: Done
+  /// has finished, and a non-Revoked ticket every one of whose gate deps
+  /// can finish can finish too. It recurses over gateDeps, the same
+  /// relation the dispatch gate reads.
+  ///
+  /// WHY UPWARD (the grouping lesson): stuckSet grows outward from a base
+  /// case (PEscalated), and a dependency CYCLE has no base case — which is
+  /// structurally why no phase added to that base could ever have seen the
+  /// deadlock absorption could build. A cycle's members each wait on the
+  /// other, so neither's forall is ever satisfied and both simply never
+  /// enter this fixpoint. Membership is over-approximate on purpose (an
+  /// out-of-gas Escalated ticket is "able" here and covered by the desk
+  /// disjunct below): this is a deadlock net, not a liveness oracle.
+  val canFinishSet: Set[int] =
+    range(1, liveTickets.size() + 1).foldl(Set(), (cf, _) =>
+      liveTickets.filter(j => or {
+        tickets.get(j).phase == PDone,
+        and {
+          tickets.get(j).phase != PRevoked,
+          gateDeps(core, j).forall(d => cf.contains(d))
+        }
+      }))
+
+  /// NO STRUCTURAL DEADLOCK: every live ticket can still reach Done, or was
+  /// settled by its author (PRevoked), or holds an open desk task a human
+  /// can act on. This is the half of charter §2's visibility row that IS a
+  /// state theorem — a ticket with no continuation at all is a defect in
+  /// every reading, whatever anyone accepts about WAITING (an abandoned
+  /// Draft, an unpicked dispatch, an unwon dequeue all still have
+  /// continuations, so none of them is flagged here — see the charter's
+  /// bounds-work-not-waiting row).
+  ///
+  /// Unlike stuckSubsetCovered this is NOT definitional: canFinishSet
+  /// recurses on gate deps and Done-ness, coverage recurses on
+  /// escalations, so the containment is a claim about the machine. Its
+  /// teeth are demonstrated against a real defect rather than argued —
+  /// see the validation note in specs/chuggy/README.md.
+  val noStructuralDeadlock: bool = liveTickets.forall(j => or {
+    canFinishSet.contains(j),
+    tickets.get(j).phase == PRevoked,
+    hasOpenHumanTask(tickets.get(j))
+  })
+
+  /// CASCADE SAFETY (stuckSubsetCovered's style, revoke's content): every ticket
   /// transitively stuck behind a Revoked dep is parked with its own open
   /// human task (PEscalated, wall dependency_revoked — hasOpenHumanTask
   /// derives the task) or is itself revoked (its author settled it too).
@@ -1999,7 +2066,7 @@ module chuggy_domain {
   /// is no reachable in-between state where a doomed ticket waits invisibly.
   /// No ticket may wait invisibly forever behind a revoked dep — and since
   /// PRevoked opens no task (the author's settled choice), this invariant
-  /// is the coverage deskVisibility cannot provide through the dep itself.
+  /// is the coverage the walks cannot provide through the dep itself.
   /// NON-VACUITY: check.sh Stage 9b pins a machine trace where the
   /// cascade actually parks dependents (cascadeParkNever — deterministic
   /// since the witness-hardening PR, tests/chuggy_witness_test.qnt), and
@@ -2179,8 +2246,9 @@ module chuggy_domain {
     citationsWellFormed,
     depsAcyclic,
     idsDense,
-    deskVisibility,
+    stuckSubsetCovered,
     cascadeSafety,
+    noStructuralDeadlock,
     measureDescends
   }
 }

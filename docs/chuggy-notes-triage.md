@@ -37,7 +37,7 @@ veto welcome). Refinements from the follow-up message are folded in.
 
 | Note | Where |
 |---|---|
-| "Batched from Ready or Blocked" (follow-up) | Merge-queue PR: `Batched` enters from the released pre-work state (`PPending`), **not** from authoring as v1's table had it. |
+| ~~"Batched from Ready or Blocked" (follow-up)~~ | **WITHDRAWN 2026-08-14 (davemo88) — grouping removed entirely.** It landed in the merge-queue PR as `Batched` entering from `PPending`, then came out again with the whole group half: the absorbed-lead reading admitted a **reachable, invariant-invisible dep cycle** through the derived union (two hops beat `absorbableIn`'s direct-dep refusal), it was not modelling chuggernaut's batch anyway (a fresh job composing members' briefs and evaluator lists, not an ordinary ticket absorbing peers), and a batch is expressible as an ordinary ticket whose brief covers the work. This row is the disposition of the note, not of the mechanism: **the note is withdrawn, not deferred.** |
 | "allow passing evaluators to cite code they care about to let them decide whether to rerun if evaluation must rerun" | Own small PR after this one: task records carry abstract citation footprints; rework respawns only evaluators whose footprint intersects the cycle's change (nondet abstraction over real diffs). |
 
 ## Open — default chosen, veto welcome

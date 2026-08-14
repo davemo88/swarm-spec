@@ -131,8 +131,9 @@
 ///                       (ReworkPolicy = RWBudget(n), notes PR).
 ///   4. micro          — within-cycle progress, THREE sub-digits (PR 3),
 ///                       lexicographic:
-///                       phaseRank   (Draft 7, the only authoring phase, the
-///                                    ceiling — Frozen removed by the notes;
+///                       phaseRank   (Draft 6, the only authoring phase, the
+///                                    ceiling — Frozen removed by the notes,
+///                                    Batched by the grouping removal;
 ///                                    Pending 5 > Working 4 > Evaluating 3 >
 ///                                    Landing 2 (enqueued) >
 ///                                    Gated 1 (the depth-1 merge gate,
@@ -362,25 +363,46 @@
 ///                       absorbing, so each such step permanently settles
 ///                       one ticket — at most N_TICKETS ever.)
 ///
-/// PER-TICKET LIVENESS, SKETCHED — CONDITIONAL ON AUTHORS (roadmap PR 1 gate,
-/// extended by PR 2; PR 3 changed digits, the notes PR changed the
-/// authoring boundary, and the grouping removal deleted the BATCHING set —
-/// none changed the argument): ticketMeasure is a
-/// nonnegative integer, every non-STUTTER non-CHURN non-AUTHORING step
-/// strictly decreases the sum of ticketMeasure over all tickets, each CHURN step
-/// requires an operator acting on a desk-visible ticket (domain.qnt
-/// `deskVisibility`), and each AUTHORING step is bounded by the
-/// arrival cap. So under
-/// default metering, any run with finitely many stutter and
-/// churn events IN WHICH EVERY AUTHOR EVENTUALLY SETTLES EACH DRAFT — every
-/// Draft is eventually released or revoked — parks every ticket in Done,
-/// Escalated, or Revoked. The conditionality is exact and deliberate: a
-/// ticket an author never releases is a ticket the system owes nothing for (this
-/// mirrors the charter §4 quiescence conditionality — the system cannot
-/// promise termination while the environment keeps acting); with the
-/// unfreeze loop gone, an unreleased Draft's measure simply sits flat
-/// rather than climbing. The unconditional system-quiescence theorem is
-/// charter §4's contested half and is NOT claimed here.
+/// PER-TICKET WORK-BOUNDEDNESS (roadmap PR 1 gate, extended by PR 2; PR 3
+/// changed digits, the notes PR changed the authoring boundary, the
+/// grouping removal deleted the BATCHING set — none changed the argument.
+/// RETITLED 2026-08-14 by davemo88, from "PER-TICKET LIVENESS, SKETCHED":
+/// the argument was always this one, and the old title claimed a
+/// conclusion it never reached. See THE FAIRNESS GAP below.)
+///
+/// THE THEOREM: ticketMeasure is a nonnegative integer, and every
+/// non-STUTTER non-CHURN non-AUTHORING step strictly decreases the sum of
+/// ticketMeasure over all tickets. Each CHURN step requires an operator
+/// acting on a ticket with an open desk task (domain.qnt `coveredSet`),
+/// and each AUTHORING step is bounded by the arrival cap. So, given the
+/// trusted fabric axioms (charter §2 — spawned tasks eventually resolve,
+/// `activeDeadlineSeconds`/`backoffLimit`) and under default metering, any
+/// run with finitely many stutter and churn events performs FINITELY MANY
+/// ACTING STEPS PER TICKET: no ticket can be dispatched, reworked, evicted
+/// and resumed forever. That is exactly the class of defect v1 found and
+/// priced — the §5a gate-loop livelock and the §5b free-resume churn are
+/// both perpetual WORK, and the accounts are what kill them.
+///
+/// THE FAIRNESS GAP — what this does NOT say, stated because the older
+/// wording did say it: descent bounds how many acting steps CAN happen; it
+/// does not force an enabled step to be TAKEN, so it does not put any
+/// particular ticket into a terminal. Closing that needs weak fairness in
+/// its per-ticket form — "a ticket that stays continuously Ready is
+/// eventually dispatched" — and chuggy does not have it: "no queue, no
+/// fairness" is a standing non-goal (charter §2; domain.qnt decideDispatch).
+/// Note the ordinary action-level reading would not suffice either: the
+/// `dispatch` action's nondet pick ranges over readyTickets, so a run in
+/// which the agentic dispatcher forever prefers other tickets takes
+/// `dispatch` infinitely often and still starves one. Accepted 2026-08-14
+/// (davemo88): "if there is always more pressing work, that's a real
+/// possibility." A ticket that stops being chosen sits FLAT — it does not
+/// churn — which is the whole of what is owed.
+///
+/// So: CHUGGY BOUNDS WORK, NOT WAITING (charter §2). Waiting on an author
+/// to release a Draft, on the dispatcher to pick, and on the gate to free
+/// its slot (proposed R6) are all unbounded BY DECISION. The unconditional
+/// system-quiescence theorem remains charter §4's contested half and is
+/// NOT claimed here.
 module chuggy_measure {
 
   // === Vocabulary ==========================================================
@@ -654,8 +676,6 @@ module chuggy_measure {
   /// resolves, nothing is emitted) — carries LONone. The iff is the
   /// landingIsolation invariant (domain.qnt).
   type LandingObs = LONone | LOAttempt({ repo: int, branchMoved: bool })
-
-  /// THE GROUP MARK (merge-queue PR — chuggernaut spec.md §2.1 Batches,
 
   /// One ticket's record. The measure below is a pure function of this.
   type Ticket = {
