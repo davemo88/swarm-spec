@@ -389,10 +389,23 @@ echo "=== Stage 9b: reachability witnesses — deterministic layer (gates) + ran
 # batch module witnessed the group half and was deleted with it (the
 # grouping removal). None has a paired random probe (landing attempts are
 # dense; the unseeded Stage 9 runs are the random side).
+#
+# THE EIGHTH, and the odd one out (bounds-work-not-waiting, 2026-08-14):
+# chuggy_witness_draft_wait_test witnesses something the machine
+# deliberately does NOT guarantee — a released ticket wedged behind a
+# Draft its author never releases, movable by no machine action, in
+# neither desk walk, with stuckSubsetCovered passing VACUOUSLY over it and
+# noStructuralDeadlock staying green because a continuation still exists.
+# It is here so the charter's bounds-work-not-waiting acceptance is a
+# thing the suite holds rather than a paragraph the next reader
+# re-derives: an edit that makes this state flag has changed the accepted
+# position, not merely tightened an invariant. (The count above read
+# "eight" while the loop listed seven, between the grouping removal
+# deleting the batch module and this one arriving; it is honest again.)
 for m in chuggy_witness_free_test chuggy_witness_cascade_test \
          chuggy_witness_stage_test chuggy_witness_carry_test \
          chuggy_witness_multirepo_test chuggy_witness_gate_test \
-         chuggy_witness_gate_deadline_test; do
+         chuggy_witness_gate_deadline_test chuggy_witness_draft_wait_test; do
   echo "--- quint test --main=$m specs/chuggy/tests/chuggy_witness_test.qnt"
   npx quint test --main="$m" specs/chuggy/tests/chuggy_witness_test.qnt
 done
